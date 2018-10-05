@@ -6,6 +6,7 @@ from whirlybird_msgs.msg import Command
 
 import numpy as np
 
+
 class WhirlybirdSim():
 
     def __init__(self):
@@ -75,9 +76,9 @@ class WhirlybirdSim():
 
         # publish
         self.whirlybird_pub.publish(
-            roll = enc[0], pitch = enc[1], yaw = enc[2],
-            accel_x = acc[0], accel_y = acc[1], accel_z = acc[2],
-            gyro_x = gyro[0], gyro_y = gyro[1], gyro_z = gyro[2])
+            roll=enc[0], pitch=enc[1], yaw=enc[2],
+            accel_x=acc[0], accel_y=acc[1], accel_z=acc[2],
+            gyro_x=gyro[0], gyro_y=gyro[1], gyro_z=gyro[2])
 
     def propagate(self, dt):
         # RK4 integration
@@ -102,7 +103,7 @@ class WhirlybirdSim():
         elif phi < self.param['phi_min']:
             phi = self.param['phi_min']
             if phid < 0:
-                phid *= -0.5 # bounce against limit
+                phid *= -0.5  # bounce against limit
 
         if psi > self.param['psi_max']:
             psi = self.param['psi_max']
@@ -111,7 +112,7 @@ class WhirlybirdSim():
         elif psi < self.param['psi_min']:
             psi = self.param['psi_min']
             if psid < 0:
-                psid *= -0.5 # bounce against limit
+                psid *= -0.5  # bounce against limit
 
         if theta > self.param['theta_max']:
             theta = self.param['theta_max']
@@ -120,7 +121,7 @@ class WhirlybirdSim():
         elif theta < self.param['theta_min']:
             theta = self.param['theta_min']
             if thetad < 0:
-                thetad *= -0.5 # bounce against limit
+                thetad *= -0.5  # bounce against limit
 
         # pack back up
         self.state[0] = phi
@@ -132,14 +133,14 @@ class WhirlybirdSim():
 
     def dynamics(self, state, command):
         # Get parameters of ros param server
-        g  = self.g 
+        g  = self.g
         l1 = self.l1
         l2 = self.l2
         m1 = self.m1
         m2 = self.m2
-        d  = self.d 
-        h  = self.h 
-        r  = self.r 
+        d  = self.d
+        h  = self.h
+        r  = self.r
         Jx = self.Jx
         Jy = self.Jy
         Jz = self.Jz
@@ -171,8 +172,56 @@ class WhirlybirdSim():
 
         ################################################
         # Implement Dynamics for Accelerations Here    #
+        M11 = Jx
+        M22 = m1 * l1**2 + m2 * l2**2 + Jy * cphi**2 + Jz * sphi**2
+        recuring_val = m1 * l1**2 + m2 * l2**2 + Jy * sphi**2 + Jz * cphi**2
+        M33 = recuring_val * ctheta**2 + Jx * stheta**2
+        M13 = -Jx * stheta
+        M23 = (Jy - Jz) * sphi * cphi * ctheta
+        M = np.array([
+            [M11,   0, M13],
+            [0,   M22, M23],
+            [M13, M23, M33]
+        ])
 
+        c1 = -thetad**2 * (Jz - Jy) * sphi * cphi + \
+            psid**2 * (Jz - Jy) * sphi * cphi * ctheta**2 - \
+            thetad * psid * ctheta * (Jx - (Jz - Jy) * (cphi**2 - sphi**2))
 
+        c2 = psid**2 * stheta * ctheta * (-Jx + recuring_val) - \
+            2 * phid * thetad * (Jz - Jy) * sphi * cphi - \
+            phid * psid * ctheta * (-Jx + (Jz - Jy) * (cphi**2 - sphi**2))
+
+        c3 = thetad**2 * (Jz - Jy) * sphi * cphi * stheta - \
+            phid * thetad * ctheta * (Jx + (Jz - Jy) * (cphi**2 - sphi**2)) -\
+            2 * phid * psid * (Jz - Jy) * ctheta**2 * sphi * cphi + \
+            2 * thetad * psid * stheta * ctheta * (Jx - recuring_val)
+
+        c = np.array([
+            [c1],
+            [c2],
+            [c3]
+        ])
+        c.shape = (3, 1)
+
+        dPdq = np.array([
+            [0],
+            [(m1 * l1 - m2 * l2) * g * ctheta],
+            [0]
+        ])
+        dPdq.shape = (3, 1)
+
+        Q = np.array([
+            [d * (fl - fr)],
+            [l1 * (fl + fr) * cphi],
+            [l1 * (fl + fr) * ctheta * sphi + d * (fr - fl) * stheta]
+        ])
+        Q.shape = (3, 1)
+
+        sol = np.squeeze(np.linalg.solve(M, Q - c - dPdq))
+        sol.shape = (3, 1)
+        xdot[3:6] = sol[0:3]
+        # rospy.logfatal("xdot:\n%s", xdot)
         ################################################
 
         return xdot
@@ -187,10 +236,10 @@ class WhirlybirdSim():
         psi = self.state[2]
 
         # accelerometer
-        accel = np.zeros((3,1)) 
+        accel = np.zeros((3, 1))
 
         # rate gyro
-        B = np.zeros((3,3))
+        B = np.zeros((3, 3))
         B[0,0] = 1.0
         B[0,2] = -np.sin(theta)
         B[1,1] = np.cos(phi)
@@ -198,20 +247,21 @@ class WhirlybirdSim():
         B[2,1] = -np.sin(phi)
         B[2,2] = np.cos(phi)*np.cos(theta)
 
-        gyro = B.dot(self.state[3:6]) 
+        gyro = B.dot(self.state[3:6])
         return (accel, gyro)
 
-    def sat(x, max, min):
-        if x > max:
-            x = max
-        elif x < min:
-            x = min
-        return x
+    # def sat(x, max, min):
+    #     if x > max:
+    #         x = max
+    #     elif x < min:
+    #         x = min
+    #     return x
+
 
 if __name__ == '__main__':
     rospy.init_node('whirlybird_sim')
     try:
         whirlybird = WhirlybirdSim()
     except:
-        rospy.ROSInterruptException
+        rospy.ROSInterruptException()
     pass

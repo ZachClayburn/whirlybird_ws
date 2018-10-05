@@ -9,7 +9,7 @@ r: 0.12
 Jx: 0.0047
 Jy: 0.0014
 Jz: 0.0041
-km: 100. #Note this is not the correct PWM gain. This will be found in lab4.
+km: 6.2178
 sigma_gyro: 8.7266e-5
 sigma_pixel: 0.05
 theta_max: 0.785398
