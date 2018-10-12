@@ -221,7 +221,13 @@ class WhirlybirdSim():
         sol = np.squeeze(np.linalg.solve(M, Q - c - dPdq))
         sol.shape = (3, 1)
         xdot[3:6] = sol[0:3]
-        # rospy.logfatal("xdot:\n%s", xdot)
+
+        # FIXME Constraining yaw and roll for simplified simulation
+        xdot[0] = 0
+        xdot[2] = 0
+        xdot[3] = 0
+        xdot[5] = 0
+
         ################################################
 
         return xdot

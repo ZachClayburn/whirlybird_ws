@@ -3,3 +3,4 @@ devel/
 *.swp
 src/CMakeLists.txt
 .catkin_workspace
+.idea/
