@@ -11,14 +11,13 @@
 # will need to be modified to accomodate those changes
 
 import rospy
-import time
 import numpy as np
 from whirlybird_msgs.msg import Command
 from whirlybird_msgs.msg import Whirlybird
 from std_msgs.msg import Float32
 
 
-class Controller():
+class Controller:
 
     def __init__(self):
 
@@ -44,10 +43,10 @@ class Controller():
         km = self.param['km']
 
         # Tuning variables
-        b_theta = l1 / (m1 * l1**2 + m2 * l2**2 + Jy)
+        b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
         rise_time = 0.8
-        damping_ratio = 1 / (2**(1/2))
-        natural_frequency = np.pi / (2 * rise_time * (1 - damping_ratio**2)**(1/2))
+        damping_ratio = 1 / (2 ** (1 / 2))
+        natural_frequency = np.pi / (2 * rise_time * (1 - damping_ratio ** 2) ** (1 / 2))
 
         # Roll Gains
         self.P_phi_ = 0.0
@@ -58,7 +57,7 @@ class Controller():
 
         # Pitch Gains
         self.theta_r = 0.0
-        self.P_theta_ = natural_frequency**2 / b_theta
+        self.P_theta_ = natural_frequency ** 2 / b_theta
         self.I_theta_ = 0.0
         self.D_theta_ = 2 * damping_ratio * natural_frequency / b_theta
         self.prev_theta = 0.0
@@ -110,7 +109,7 @@ class Controller():
 
         # Calculate dt (This is variable)
         now = rospy.Time.now()
-        dt = (now-self.prev_time).to_sec()
+        dt = (now - self.prev_time).to_sec()
         self.prev_time = now
 
         ##################################
@@ -146,16 +145,16 @@ class Controller():
 
         # Scale Output
         l_out = left_force / km
-        if(l_out < 0):
+        if l_out < 0:
             l_out = 0
-        elif(l_out > sat_max):
+        elif l_out > sat_max:
             rospy.logerr('Left force saturated!')
             l_out = sat_max
 
         r_out = right_force / km
-        if(r_out < 0):
+        if r_out < 0:
             r_out = 0
-        elif(r_out > sat_max):
+        elif r_out > sat_max:
             rospy.logerr('Right force saturated!')
             r_out = sat_max
 
