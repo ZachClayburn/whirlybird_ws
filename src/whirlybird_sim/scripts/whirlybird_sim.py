@@ -223,10 +223,10 @@ class WhirlybirdSim():
         xdot[3:6] = sol[0:3]
 
         # FIXME Constraining yaw and roll for simplified simulation
-        xdot[0] = 0
-        xdot[2] = 0
-        xdot[3] = 0
-        xdot[5] = 0
+        # xdot[0] = 0
+        # xdot[2] = 0
+        # xdot[3] = 0
+        # xdot[5] = 0
 
         ################################################
 

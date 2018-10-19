@@ -1,17 +1,19 @@
 <launch>
-  <arg name="model" default="$(find whirlybird_description)/urdf/whirlybird.urdf"/>
-  <arg name="gui" default="false"/>
+    <arg name="model" default="$(find whirlybird_description)/urdf/whirlybird.urdf"/>
+    <arg name="gui" default="false"/>
 
-  <param name="robot_description" textfile="$(arg model)"/>
-  <param name="use_gui" value="$(arg gui)"/>
+    <param name="robot_description" textfile="$(arg model)"/>
+    <param name="use_gui" value="$(arg gui)"/>
 
-  <node name="joint_state_publisher" pkg="whirlybird_description" type="joint_state_publisher.py"/>
-  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find whirlybird_description)/rviz/whirlybird.rviz" required="true"/>
+    <node name="joint_state_publisher" pkg="whirlybird_description" type="joint_state_publisher.py"/>
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find whirlybird_description)/rviz/whirlybird.rviz" required="true"/>
 
-  <rosparam command="load" file="$(find whirlybird_sim)/param/whirlybird.yaml" ns="whirlybird" />
-  <node pkg="whirlybird_sim" type="whirlybird_sim.py" name="whirlybird_sim"/>
-  <node name="whirlybird_controller" pkg="whirlybird_controller" type = "controller.py" />	
+    <rosparam command="load" file="$(find whirlybird_sim)/param/whirlybird.yaml" ns="whirlybird" />
+    <node pkg="whirlybird_sim" type="whirlybird_sim.py" name="whirlybird_sim"/>
+    <node name="whirlybird_controller" pkg="whirlybird_controller" type = "controller.py" />
+
+    <node name="Plot" pkg="rqt_plot" type="rqt_plot" args=""/>
 
 </launch>
 

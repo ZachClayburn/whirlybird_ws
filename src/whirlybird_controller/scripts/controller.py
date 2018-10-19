@@ -43,37 +43,46 @@ class Controller:
         km = self.param['km']
 
         # Tuning variables
-        b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
-        rise_time = 0.8
         damping_ratio = 1 / (2 ** (1 / 2))
-        natural_frequency = np.pi / (2 * rise_time * (1 - damping_ratio ** 2) ** (1 / 2))
+        self.Fe = (m1 * l1 - m2 * l2) * g / l1
+
+        b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
+        rise_time_theta = 1.4  # 0.8 is the tuned value
+        natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio ** 2) ** (1 / 2))
+
+        b_phi = 1 / Jx
+        rise_time_phi = 0.3
+        natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio ** 2) ** (1 / 2))
+
+        b_psi = l1 * self.Fe / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jz)
+        bandwidth_separation = 10
+        rise_time_psi = bandwidth_separation * rise_time_phi
+        natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio ** 2) ** (1 / 2))
 
         # Roll Gains
-        self.P_phi_ = 0.0
+        self.P_phi_ = natural_frequency_phi ** 2 / b_phi
         self.I_phi_ = 0.0
-        self.D_phi_ = 0.0
+        self.D_phi_ = 2 * damping_ratio * natural_frequency_theta / b_theta
         self.Int_phi = 0.0
         self.prev_phi = 0.0
 
         # Pitch Gains
         self.theta_r = 0.0
-        self.P_theta_ = natural_frequency ** 2 / b_theta
+        self.P_theta_ = natural_frequency_theta ** 2 / b_theta
         self.I_theta_ = 0.0
-        self.D_theta_ = 2 * damping_ratio * natural_frequency / b_theta
+        self.D_theta_ = 2 * damping_ratio * natural_frequency_theta / b_theta
         self.prev_theta = 0.0
         self.Int_theta = 0.0
 
         # Yaw Gains
         self.psi_r = 0.0
-        self.P_psi_ = 0.0
+        self.P_psi_ = natural_frequency_psi ** 2 / b_psi
         self.I_psi_ = 0.0
-        self.D_psi_ = 0.0
+        self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_theta
         self.prev_psi = 0.0
         self.Int_psi = 0.0
 
         self.prev_time = rospy.Time.now()
-
-        self.Fe = (m1 * l1 - m2 * l2) * g / l1
 
         self.command_sub_ = rospy.Subscriber('whirlybird', Whirlybird, self.whirlybirdCallback, queue_size=5)
         self.psi_r_sub_ = rospy.Subscriber('psi_r', Float32, self.psiRCallback, queue_size=5)
@@ -119,14 +128,18 @@ class Controller:
         F_e = self.Fe * np.cos(theta)
 
         theta_dot = (theta - self.prev_theta) / dt
+        phi_dot = (phi - self.prev_phi) / dt
+        psi_dot = (psi - self.prev_psi) / dt
 
-        F_tilde = self.P_theta_ * (self.theta_r - theta) - self.D_theta_ * theta_dot
-        F = F_tilde + F_e
+        force_tilde = self.P_theta_ * (self.theta_r - theta) - self.D_theta_ * theta_dot
+        force = force_tilde + F_e
 
-        torque = 0  # FIXME Add a torque later when we care about lateral movement
+        phi_r = (self.psi_r - psi) * self.P_psi_ - self.D_psi_ * psi_dot
+
+        torque = (phi_r - phi) * self.P_phi_ - self.D_phi_ * phi_dot
 
         u = np.array([
-            [F],
+            [force],
             [torque]
         ])
 
@@ -135,9 +148,10 @@ class Controller:
             [d, -d]
         ])
         left_force, right_force = np.linalg.solve(transform, u).T.tolist()[0]
-        # left_force = F / 2
-        # right_force = F / 2
+
         self.prev_theta = theta
+        self.prev_phi = phi
+        self.prev_psi = psi
 
         ##################################
 
@@ -148,14 +162,14 @@ class Controller:
         if l_out < 0:
             l_out = 0
         elif l_out > sat_max:
-            rospy.logerr('Left force saturated!')
+            # rospy.logerr('Left force saturated!')
             l_out = sat_max
 
         r_out = right_force / km
         if r_out < 0:
             r_out = 0
         elif r_out > sat_max:
-            rospy.logerr('Right force saturated!')
+            # rospy.logerr('Right force saturated!')
             r_out = sat_max
 
         # Pack up and send command
