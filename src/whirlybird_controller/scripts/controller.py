@@ -51,18 +51,18 @@ class Controller:
         natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio ** 2) ** (1 / 2))
 
         b_phi = 1 / Jx
-        rise_time_phi = 0.3
+        rise_time_phi = 0.2
         natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio ** 2) ** (1 / 2))
 
         b_psi = l1 * self.Fe / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jz)
-        bandwidth_separation = 10
+        bandwidth_separation = 6
         rise_time_psi = bandwidth_separation * rise_time_phi
         natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio ** 2) ** (1 / 2))
 
         # Roll Gains
         self.P_phi_ = natural_frequency_phi ** 2 / b_phi
         self.I_phi_ = 0.0
-        self.D_phi_ = 2 * damping_ratio * natural_frequency_theta / b_theta
+        self.D_phi_ = 2 * damping_ratio * natural_frequency_phi / b_phi
         self.Int_phi = 0.0
         self.prev_phi = 0.0
 
@@ -78,7 +78,7 @@ class Controller:
         self.psi_r = 0.0
         self.P_psi_ = natural_frequency_psi ** 2 / b_psi
         self.I_psi_ = 0.0
-        self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_theta
+        self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_psi
         self.prev_psi = 0.0
         self.Int_psi = 0.0
 
@@ -184,5 +184,5 @@ if __name__ == '__main__':
     try:
         controller = Controller()
     except:
-        rospy.ROSInterruptException
+        raise rospy.ROSInterruptException
     pass
