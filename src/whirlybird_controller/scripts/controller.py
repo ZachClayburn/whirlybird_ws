@@ -70,7 +70,7 @@ class Controller:
         # Pitch Gains
         self.theta_r = 0.0
         self.P_theta_ = natural_frequency_theta ** 2 / b_theta
-        self.I_theta_ = 3  # FIXME Tune this
+        self.I_theta_ = 3
         self.D_theta_ = 2 * damping_ratio * natural_frequency_theta / b_theta
         self.prev_theta = 0.0
         self.Int_theta = 0.0
@@ -79,7 +79,7 @@ class Controller:
         # Yaw Gains
         self.psi_r = 0.0
         self.P_psi_ = natural_frequency_psi ** 2 / b_psi
-        self.I_psi_ = 0.0  # FIXME Tune this
+        self.I_psi_ = 1.0  # FIXME Tune this
         self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_psi
         self.prev_psi = 0.0
         self.Int_psi = 0.0
@@ -139,20 +139,16 @@ class Controller:
         anti_windup_theta = 0.8
         if theta_error_dot < anti_windup_theta:
             self.Int_theta += (dt / 2) * (theta_error + self.prev_theta_error)
-            force_tilde = self.P_theta_ * theta_error + self.Int_theta * self.I_theta_ - self.D_theta_ * theta_dot
-        else:
-            force_tilde = self.P_theta_ * theta_error - self.D_theta_ * theta_dot
+        force_tilde = self.P_theta_ * theta_error + self.Int_theta * self.I_theta_ - self.D_theta_ * theta_dot
         force = force_tilde + equilibrium_force
         self.prev_theta_error = theta_error
 
         psi_error = self.psi_r - psi
         psi_error_dot = (psi_error - self.prev_psi_error) / dt
-        anti_windup_psi = 0.8
+        anti_windup_psi = 0.5
         if psi_error_dot < anti_windup_psi:
             self.Int_psi += (dt / 2) * (psi_error + self.prev_psi_error)
-            phi_r = psi_error * self.P_psi_ + self.Int_psi * self.I_psi_ - self.D_psi_ * psi_dot
-        else:
-            phi_r = psi_error * self.P_psi_ - self.D_psi_ * psi_dot
+        phi_r = psi_error * self.P_psi_ + self.Int_psi * self.I_psi_ - self.D_psi_ * psi_dot
         self.prev_psi_error = psi_error
 
         phi_error = phi_r - phi
