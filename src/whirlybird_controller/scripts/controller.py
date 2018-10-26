@@ -10,6 +10,7 @@
 # controllers use different types of gains so the class
 # will need to be modified to accomodate those changes
 
+from __future__ import division
 import rospy
 import numpy as np
 from whirlybird_msgs.msg import Command
@@ -47,7 +48,7 @@ class Controller:
         self.Fe = (m1 * l1 - m2 * l2) * g / l1
 
         b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
-        rise_time_theta = 0.8
+        rise_time_theta = 0.9
         natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio ** 2) ** (1 / 2))
 
         b_phi = 1 / Jx
@@ -61,7 +62,7 @@ class Controller:
 
         # Roll Gains
         self.P_phi_ = natural_frequency_phi ** 2 / b_phi
-        self.I_phi_ = 0.0
+        self.I_phi_ = 0.0  # FIXME Tune this
         self.D_phi_ = 2 * damping_ratio * natural_frequency_phi / b_phi
         self.Int_phi = 0.0
         self.prev_phi = 0.0
@@ -69,36 +70,37 @@ class Controller:
         # Pitch Gains
         self.theta_r = 0.0
         self.P_theta_ = natural_frequency_theta ** 2 / b_theta
-        self.I_theta_ = 0.0
+        self.I_theta_ = 3  # FIXME Tune this
         self.D_theta_ = 2 * damping_ratio * natural_frequency_theta / b_theta
         self.prev_theta = 0.0
         self.Int_theta = 0.0
+        self.prev_theta_error = 0.0
 
         # Yaw Gains
         self.psi_r = 0.0
         self.P_psi_ = natural_frequency_psi ** 2 / b_psi
-        self.I_psi_ = 0.0
+        self.I_psi_ = 0.0  # FIXME Tune this
         self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_psi
         self.prev_psi = 0.0
         self.Int_psi = 0.0
 
         self.prev_time = rospy.Time.now()
 
-        self.command_sub_ = rospy.Subscriber('whirlybird', Whirlybird, self.whirlybirdCallback, queue_size=5)
-        self.psi_r_sub_ = rospy.Subscriber('psi_r', Float32, self.psiRCallback, queue_size=5)
-        self.theta_r_sub_ = rospy.Subscriber('theta_r', Float32, self.thetaRCallback, queue_size=5)
+        self.command_sub_ = rospy.Subscriber('whirlybird', Whirlybird, self.whirlybird_callback, queue_size=5)
+        self.psi_r_sub_ = rospy.Subscriber('psi_r', Float32, self.psi_r_callback, queue_size=5)
+        self.theta_r_sub_ = rospy.Subscriber('theta_r', Float32, self.theta_r_callback, queue_size=5)
         self.command_pub_ = rospy.Publisher('command', Command, queue_size=5)
         while not rospy.is_shutdown():
             # wait for new messages and call the callback when they arrive
             rospy.spin()
 
-    def thetaRCallback(self, msg):
+    def theta_r_callback(self, msg):
         self.theta_r = msg.data
 
-    def psiRCallback(self, msg):
+    def psi_r_callback(self, msg):
         self.psi_r = msg.data
 
-    def whirlybirdCallback(self, msg):
+    def whirlybird_callback(self, msg):
         g = self.param['g']
         l1 = self.param['l1']
         l2 = self.param['l2']
@@ -125,18 +127,28 @@ class Controller:
         # Implement your controller here
 
         # Feedback linearization
-        F_e = self.Fe * np.cos(theta)
+        equilibrium_force = self.Fe * np.cos(theta)
 
         theta_dot = (theta - self.prev_theta) / dt
         phi_dot = (phi - self.prev_phi) / dt
         psi_dot = (psi - self.prev_psi) / dt
 
-        force_tilde = self.P_theta_ * (self.theta_r - theta) - self.D_theta_ * theta_dot
-        force = force_tilde + F_e
+        theta_error = self.theta_r - theta
+        theta_error_dot = (theta_error - self.prev_theta_error) / dt
+        anti_windup_theta = 0.8
+        if theta_error_dot < anti_windup_theta:
+            self.Int_theta += (dt / 2) * (theta_error + self.prev_theta_error)
+            force_tilde = self.P_theta_ * theta_error + self.Int_theta * self.I_theta_ - self.D_theta_ * theta_dot
+        else:
+            force_tilde = self.P_theta_ * theta_error - self.D_theta_ * theta_dot
+        force = force_tilde + equilibrium_force
+        self.prev_theta_error = theta_error
 
-        phi_r = (self.psi_r - psi) * self.P_psi_ - self.D_psi_ * psi_dot
+        psi_error = self.psi_r - psi
+        phi_r = psi_error * self.P_psi_ - self.D_psi_ * psi_dot
 
-        torque = (phi_r - phi) * self.P_phi_ - self.D_phi_ * phi_dot
+        phi_error = phi_r - phi
+        torque = phi_error * self.P_phi_ - self.D_phi_ * phi_dot
 
         u = np.array([
             [force],
