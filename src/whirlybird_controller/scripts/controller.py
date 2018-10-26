@@ -47,7 +47,7 @@ class Controller:
         self.Fe = (m1 * l1 - m2 * l2) * g / l1
 
         b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
-        rise_time_theta = 1.4  # 0.8 is the tuned value
+        rise_time_theta = 0.8
         natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio ** 2) ** (1 / 2))
 
         b_phi = 1 / Jx
@@ -55,7 +55,7 @@ class Controller:
         natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio ** 2) ** (1 / 2))
 
         b_psi = l1 * self.Fe / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jz)
-        bandwidth_separation = 6
+        bandwidth_separation = 4.5
         rise_time_psi = bandwidth_separation * rise_time_phi
         natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio ** 2) ** (1 / 2))
 
@@ -162,14 +162,14 @@ class Controller:
         if l_out < 0:
             l_out = 0
         elif l_out > sat_max:
-            # rospy.logerr('Left force saturated!')
+            rospy.logerr('Left force saturated!')
             l_out = sat_max
 
         r_out = right_force / km
         if r_out < 0:
             r_out = 0
         elif r_out > sat_max:
-            # rospy.logerr('Right force saturated!')
+            rospy.logerr('Right force saturated!')
             r_out = sat_max
 
         # Pack up and send command
