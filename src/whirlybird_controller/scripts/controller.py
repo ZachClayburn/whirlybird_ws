@@ -83,6 +83,7 @@ class Controller:
         self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_psi
         self.prev_psi = 0.0
         self.Int_psi = 0.0
+        self.prev_psi_error = 0.0
 
         self.prev_time = rospy.Time.now()
 
@@ -145,7 +146,14 @@ class Controller:
         self.prev_theta_error = theta_error
 
         psi_error = self.psi_r - psi
-        phi_r = psi_error * self.P_psi_ - self.D_psi_ * psi_dot
+        psi_error_dot = (psi_error - self.prev_psi_error) / dt
+        anti_windup_psi = 0.8
+        if psi_error_dot < anti_windup_psi:
+            self.Int_psi += (dt / 2) * (psi_error + self.prev_psi_error)
+            phi_r = psi_error * self.P_psi_ + self.Int_psi * self.I_psi_ - self.D_psi_ * psi_dot
+        else:
+            phi_r = psi_error * self.P_psi_ - self.D_psi_ * psi_dot
+        self.prev_psi_error = psi_error
 
         phi_error = phi_r - phi
         torque = phi_error * self.P_phi_ - self.D_phi_ * phi_dot
