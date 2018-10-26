@@ -62,10 +62,11 @@ class Controller:
 
         # Roll Gains
         self.P_phi_ = natural_frequency_phi ** 2 / b_phi
-        self.I_phi_ = 0.0  # FIXME Tune this
+        self.I_phi_ = 1.0  # FIXME Tune this
         self.D_phi_ = 2 * damping_ratio * natural_frequency_phi / b_phi
         self.Int_phi = 0.0
         self.prev_phi = 0.0
+        self.prev_phi_error = 0.0
 
         # Pitch Gains
         self.theta_r = 0.0
@@ -152,7 +153,12 @@ class Controller:
         self.prev_psi_error = psi_error
 
         phi_error = phi_r - phi
-        torque = phi_error * self.P_phi_ - self.D_phi_ * phi_dot
+        phi_error_dot = (phi_error - self.prev_phi_error) / dt
+        anti_windup_phi = 1
+        if phi_error_dot < anti_windup_phi:
+            self.Int_phi += (dt / 2) * (phi_error + self.prev_phi_error)
+        torque = phi_error * self.P_phi_ + self.Int_phi * self.I_phi_ - self.D_phi_ * phi_dot
+        self.prev_phi_error = phi_error
 
         u = np.array([
             [force],
