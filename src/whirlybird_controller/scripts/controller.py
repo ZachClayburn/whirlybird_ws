@@ -44,7 +44,7 @@ class Controller:
         km = self.param['km']
 
         # Tuning variables
-        damping_ratio = 1 / (2 ** (1 / 2)) + 0.1
+        damping_ratio = 1 / (2 ** (1 / 2)) + 0.109
         self.Fe = (m1 * l1 - m2 * l2) * g / l1
 
         b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
@@ -60,13 +60,13 @@ class Controller:
         rise_time_psi = bandwidth_separation * rise_time_phi
         natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio ** 2) ** (1 / 2))
 
-        self.anti_windup_theta = 0.01
-        self.anti_windup_psi = np.inf
-        self.anti_windup_phi = np.inf
+        self.anti_windup_theta = 0.05
+        self.anti_windup_psi = 0.08
+        self.anti_windup_phi = 0.0001
 
         # Roll Gains
         self.P_phi_ = natural_frequency_phi ** 2 / b_phi
-        self.I_phi_ = 0.  # FIXME Tune this
+        self.I_phi_ = 0.005  # FIXME Tune this
         self.D_phi_ = 2.0 * damping_ratio * natural_frequency_phi / b_phi
         self.Int_phi = 0.0
         self.prev_phi = 0.0
@@ -84,7 +84,7 @@ class Controller:
         # Yaw Gains
         self.psi_r = 0.0
         self.P_psi_ = natural_frequency_psi ** 2 / b_psi
-        self.I_psi_ = 0.  # FIXME Tune this
+        self.I_psi_ = 0.0005  # FIXME Tune this
         self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_psi
         self.prev_psi = 0.0
         self.Int_psi = 0.0
