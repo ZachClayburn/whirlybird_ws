@@ -44,7 +44,7 @@ class Controller:
         km = self.param['km']
 
         # Tuning variables
-        damping_ratio = 1 / (2 ** (1 / 2)) + 0.109
+        damping_ratio = 1 / (2 ** (1 / 2)) + 0.110
         self.Fe = (m1 * l1 - m2 * l2) * g / l1
 
         b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
@@ -56,7 +56,7 @@ class Controller:
         natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio ** 2) ** (1 / 2))
 
         b_psi = l1 * self.Fe / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jz)
-        bandwidth_separation = 7
+        bandwidth_separation = 7.05
         rise_time_psi = bandwidth_separation * rise_time_phi
         natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio ** 2) ** (1 / 2))
 
