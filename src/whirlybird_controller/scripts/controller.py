@@ -52,7 +52,7 @@ class Controller:
         natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio ** 2) ** (1 / 2))
 
         b_phi = 1 / Jx
-        rise_time_phi = 0.2
+        rise_time_phi = 0.3
         natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio ** 2) ** (1 / 2))
 
         b_psi = l1 * self.Fe / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jz)
@@ -60,17 +60,21 @@ class Controller:
         rise_time_psi = bandwidth_separation * rise_time_phi
         natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio ** 2) ** (1 / 2))
 
+        self.sigma = 0.05
+
         self.anti_windup_theta = 0.05
         self.anti_windup_psi = 0.08
         self.anti_windup_phi = 0.0001
 
         # Roll Gains
         self.P_phi_ = natural_frequency_phi ** 2 / b_phi
-        self.I_phi_ = 0.005  # FIXME Tune this
+        self.I_phi_ = 0.0  # FIXME Tune this
         self.D_phi_ = 2.0 * damping_ratio * natural_frequency_phi / b_phi
         self.Int_phi = 0.0
         self.prev_phi = 0.0
+        self.prev_phi_dirty_dot = 0.0
         self.prev_phi_error = 0.0
+        self.prev_phi_error_dirty_dot = 0.0
 
         # Pitch Gains
         self.theta_r = 0.0
@@ -78,17 +82,21 @@ class Controller:
         self.I_theta_ = 2.0
         self.D_theta_ = 2 * damping_ratio * natural_frequency_theta / b_theta
         self.prev_theta = 0.0
+        self.prev_theta_dirty_dot = 0.0
         self.Int_theta = 0.0
         self.prev_theta_error = 0.0
+        self.prev_theta_error_dirty_dot = 0.0
 
         # Yaw Gains
         self.psi_r = 0.0
         self.P_psi_ = natural_frequency_psi ** 2 / b_psi
-        self.I_psi_ = 0.0005  # FIXME Tune this
+        self.I_psi_ = 0.05  # FIXME Tune this
         self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_psi
         self.prev_psi = 0.0
+        self.prev_psi_dirty_dot = 0.0
         self.Int_psi = 0.0
         self.prev_psi_error = 0.0
+        self.prev_psi_error_dirty_dot = 0.0
 
         self.prev_time = rospy.Time.now()
 
@@ -135,27 +143,27 @@ class Controller:
         # Feedback linearization
         equilibrium_force = self.Fe * np.cos(theta)
 
-        theta_dot = (theta - self.prev_theta) / dt
-        phi_dot = (phi - self.prev_phi) / dt
-        psi_dot = (psi - self.prev_psi) / dt
+        theta_dot = self.dirty_derivative(theta, self.prev_theta, self.prev_theta_dirty_dot, dt)
+        phi_dot = self.dirty_derivative(phi, self.prev_phi, self.prev_phi_dirty_dot, dt)
+        psi_dot = self.dirty_derivative(psi, self.prev_psi, self.prev_psi_dirty_dot, dt)
 
         theta_error = self.theta_r - theta
-        theta_error_dot = np.abs(theta_error - self.prev_theta_error) / dt
-        if theta_error_dot < self.anti_windup_theta:
+        theta_error_dot = self.dirty_derivative(theta_error, self.prev_theta_error, self.prev_theta_error_dirty_dot, dt)
+        if np.abs(theta_error_dot) < self.anti_windup_theta:
             self.Int_theta += (dt / 2) * (theta_error + self.prev_theta_error)
         force_tilde = self.P_theta_ * theta_error + self.Int_theta * self.I_theta_ - self.D_theta_ * theta_dot
         force = force_tilde + equilibrium_force
         self.prev_theta_error = theta_error
 
         psi_error = self.psi_r - psi
-        psi_error_dot = np.abs(psi_error - self.prev_psi_error) / dt
-        if psi_error_dot < self.anti_windup_psi:
+        psi_error_dot = self.dirty_derivative(psi_error, self.prev_psi_error, self.prev_psi_error_dirty_dot, dt)
+        if np.abs(psi_error_dot) < self.anti_windup_psi:
             self.Int_psi += (dt / 2) * (psi_error + self.prev_psi_error)
         phi_r = psi_error * self.P_psi_ + self.Int_psi * self.I_psi_ - self.D_psi_ * psi_dot
         self.prev_psi_error = psi_error
 
         phi_error = phi_r - phi
-        phi_error_dot = np.abs(phi_error - self.prev_phi_error) / dt
+        phi_error_dot = self.dirty_derivative(phi_error, self.prev_phi_error, self.prev_phi_error_dirty_dot, dt)
         if phi_error_dot < self.anti_windup_phi:
             self.Int_phi += (dt / 2) * (phi_error + self.prev_phi_error)
         torque = phi_error * self.P_phi_ + self.Int_phi * self.I_phi_ - self.D_phi_ * phi_dot
@@ -175,6 +183,14 @@ class Controller:
         self.prev_theta = theta
         self.prev_phi = phi
         self.prev_psi = psi
+
+        self.prev_theta_dirty_dot = theta_dot
+        self.prev_phi_dirty_dot = phi_dot
+        self.prev_psi_dirty_dot = psi_dot
+
+        self.prev_theta_error_dirty_dot = theta_error_dot
+        self.prev_phi_error_dirty_dot = phi_error_dot
+        self.prev_psi_error_dirty_dot = psi_error_dot
 
         ##################################
 
@@ -200,6 +216,10 @@ class Controller:
         command.left_motor = l_out
         command.right_motor = r_out
         self.command_pub_.publish(command)
+
+    def dirty_derivative(self, this_val, last_val, last_dirty_dot, dt):
+        return ((2 * self.sigma - dt) / (2 * self.sigma + dt)) * last_dirty_dot +\
+               (2 / (2 * self.sigma + dt)) * (this_val - last_val)
 
 
 if __name__ == '__main__':
