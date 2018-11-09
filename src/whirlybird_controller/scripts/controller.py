@@ -45,8 +45,8 @@ class Controller:
 
         # Tuning variables
         damping_ratio_theta = 0.8
-        damping_ratio_psi = 0.7  # Yaw
-        damping_ratio_phi = 0.8  # Roll
+        damping_ratio_psi = 0.9  # Yaw
+        damping_ratio_phi = 0.707  # Roll
         self.Fe = (m1 * l1 - m2 * l2) * g / l1
 
         b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
@@ -54,23 +54,23 @@ class Controller:
         natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio_theta ** 2) ** (1 / 2))
 
         b_phi = 1 / Jx
-        rise_time_phi = 0.4
+        rise_time_phi = 0.27
         natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio_phi ** 2) ** (1 / 2))
 
         b_psi = l1 * self.Fe / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jz)
-        bandwidth_separation = 6.0
+        bandwidth_separation = 8.0
         rise_time_psi = bandwidth_separation * rise_time_phi
         natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio_psi ** 2) ** (1 / 2))
 
         self.sigma = 0.05
 
         self.anti_windup_theta = 0.05
-        self.anti_windup_psi = 0.04  # Yaw
-        self.anti_windup_phi = 0.0001  # Roll
+        self.anti_windup_psi = 0.08  # Yaw
+        self.anti_windup_phi = 0  # Roll
 
         # Roll Gains
         self.P_phi_ = natural_frequency_phi ** 2 / b_phi
-        self.I_phi_ = 0.08  # FIXME Tune this
+        self.I_phi_ = 0.0  # FIXME Tune this
         self.D_phi_ = 2.0 * damping_ratio_phi * natural_frequency_phi / b_phi
         self.Int_phi = 0.0
         self.prev_phi = 0.0
@@ -91,9 +91,9 @@ class Controller:
 
         # Yaw Gains
         self.psi_r = 0.0
-        self.P_psi_ = natural_frequency_psi ** 2 / b_psi
-        self.I_psi_ = 0.05  # FIXME Tune this
-        self.D_psi_ = 2 * damping_ratio_psi * natural_frequency_psi / b_psi
+        self.P_psi_ = (2.2 / rise_time_psi) ** 2 / b_psi + 0.3
+        self.I_psi_ = 0.55  # FIXME Tune this
+        self.D_psi_ = 2 * damping_ratio_psi * 2.2 / (b_psi + rise_time_psi) + 0.45
         self.prev_psi = 0.0
         self.prev_psi_dirty_dot = 0.0
         self.Int_psi = 0.0
