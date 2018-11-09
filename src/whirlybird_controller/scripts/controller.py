@@ -44,32 +44,34 @@ class Controller:
         km = self.param['km']
 
         # Tuning variables
-        damping_ratio = 1 / (2 ** (1 / 2)) + 0.110
+        damping_ratio_theta = 0.8
+        damping_ratio_psi = 0.7  # Yaw
+        damping_ratio_phi = 0.8  # Roll
         self.Fe = (m1 * l1 - m2 * l2) * g / l1
 
         b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
         rise_time_theta = 1.2
-        natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio ** 2) ** (1 / 2))
+        natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio_theta ** 2) ** (1 / 2))
 
         b_phi = 1 / Jx
-        rise_time_phi = 0.3
-        natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio ** 2) ** (1 / 2))
+        rise_time_phi = 0.4
+        natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio_phi ** 2) ** (1 / 2))
 
         b_psi = l1 * self.Fe / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jz)
-        bandwidth_separation = 7.05
+        bandwidth_separation = 6.0
         rise_time_psi = bandwidth_separation * rise_time_phi
-        natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio ** 2) ** (1 / 2))
+        natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio_psi ** 2) ** (1 / 2))
 
         self.sigma = 0.05
 
         self.anti_windup_theta = 0.05
-        self.anti_windup_psi = 0.08
-        self.anti_windup_phi = 0.0001
+        self.anti_windup_psi = 0.04  # Yaw
+        self.anti_windup_phi = 0.0001  # Roll
 
         # Roll Gains
         self.P_phi_ = natural_frequency_phi ** 2 / b_phi
-        self.I_phi_ = 0.0  # FIXME Tune this
-        self.D_phi_ = 2.0 * damping_ratio * natural_frequency_phi / b_phi
+        self.I_phi_ = 0.08  # FIXME Tune this
+        self.D_phi_ = 2.0 * damping_ratio_phi * natural_frequency_phi / b_phi
         self.Int_phi = 0.0
         self.prev_phi = 0.0
         self.prev_phi_dirty_dot = 0.0
@@ -80,7 +82,7 @@ class Controller:
         self.theta_r = 0.0
         self.P_theta_ = natural_frequency_theta ** 2 / b_theta
         self.I_theta_ = 2.0
-        self.D_theta_ = 2 * damping_ratio * natural_frequency_theta / b_theta
+        self.D_theta_ = 2 * damping_ratio_theta * natural_frequency_theta / b_theta
         self.prev_theta = 0.0
         self.prev_theta_dirty_dot = 0.0
         self.Int_theta = 0.0
@@ -91,7 +93,7 @@ class Controller:
         self.psi_r = 0.0
         self.P_psi_ = natural_frequency_psi ** 2 / b_psi
         self.I_psi_ = 0.05  # FIXME Tune this
-        self.D_psi_ = 2 * damping_ratio * natural_frequency_psi / b_psi
+        self.D_psi_ = 2 * damping_ratio_psi * natural_frequency_psi / b_psi
         self.prev_psi = 0.0
         self.prev_psi_dirty_dot = 0.0
         self.Int_psi = 0.0
@@ -164,10 +166,12 @@ class Controller:
 
         phi_error = phi_r - phi
         phi_error_dot = self.dirty_derivative(phi_error, self.prev_phi_error, self.prev_phi_error_dirty_dot, dt)
-        if phi_error_dot < self.anti_windup_phi:
+        if np.abs(phi_error_dot) < self.anti_windup_phi:
             self.Int_phi += (dt / 2) * (phi_error + self.prev_phi_error)
         torque = phi_error * self.P_phi_ + self.Int_phi * self.I_phi_ - self.D_phi_ * phi_dot
         self.prev_phi_error = phi_error
+
+        print('Pitch: {}\nYaw: {}\nRoll: {}'.format(self.Int_theta, self.Int_psi, self.Int_phi))
 
         u = np.array([
             [force],
