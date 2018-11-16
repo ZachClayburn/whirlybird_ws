@@ -13,6 +13,7 @@
 from __future__ import division
 import rospy
 import numpy as np
+import control.matlab as ctrl
 from whirlybird_msgs.msg import Command
 from whirlybird_msgs.msg import Whirlybird
 from std_msgs.msg import Float32
@@ -46,21 +47,69 @@ class Controller:
         # Tuning variables
         damping_ratio_theta = 0.8
         damping_ratio_psi = 0.9  # Yaw
-        damping_ratio_phi = 0.707  # Roll
-        self.Fe = (m1 * l1 - m2 * l2) * g / l1
+        damping_ratio_phi = 0.8  # Roll
+        rise_time_theta = 1.0
+        rise_time_phi = 0.35
+        bandwidth_separation = 7.0
 
-        b_theta = l1 / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
-        rise_time_theta = 1.2
+        denom = (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
+        Fe = (m1 * l1 - m2 * l2) * g / l1
+        b_psi = l1 * Fe / denom
+        self.Fe = Fe
+
         natural_frequency_theta = np.pi / (2 * rise_time_theta * (1 - damping_ratio_theta ** 2) ** (1 / 2))
-
-        b_phi = 1 / Jx
-        rise_time_phi = 0.27
         natural_frequency_phi = np.pi / (2 * rise_time_phi * (1 - damping_ratio_phi ** 2) ** (1 / 2))
-
-        b_psi = l1 * self.Fe / (m1 * l1 ** 2 + m2 * l2 ** 2 + Jz)
-        bandwidth_separation = 8.0
         rise_time_psi = bandwidth_separation * rise_time_phi
         natural_frequency_psi = np.pi / (2 * rise_time_psi * (1 - damping_ratio_psi ** 2) ** (1 / 2))
+
+        # State space controller
+        A_lat = np.asarray([
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+            [0, 0, 0, 0],
+            [b_psi, 0, 0, 0],
+        ])
+        B_lat = np.asarray([
+            [0],
+            [0],
+            [1 / Jx],
+            [0],
+        ])
+        C_lat = np.asarray([
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+        ])
+        P_lat = np.asarray([
+            natural_frequency_phi * (-damping_ratio_phi + 1j * np.sqrt(1 - damping_ratio_phi ** 2)),
+            natural_frequency_phi * (-damping_ratio_phi - 1j * np.sqrt(1 - damping_ratio_phi ** 2)),
+            natural_frequency_psi * (-damping_ratio_psi + 1j * np.sqrt(1 - damping_ratio_psi ** 2)),
+            natural_frequency_psi * (-damping_ratio_psi - 1j * np.sqrt(1 - damping_ratio_psi ** 2)),
+        ])
+
+        self.check_state_space(A_lat, B_lat)
+        self.k_lat = ctrl.place(A_lat, B_lat, P_lat)
+        self.k_r_lat = (-1 /
+                        (np.dot(np.dot(C_lat[1], np.linalg.inv(A_lat - np.dot(B_lat, self.k_lat))), B_lat))).item(0)
+
+        A_lon = np.asarray([
+            [0, 1],
+            [Fe * np.sin(0) / denom, 0]
+        ])
+        B_lon = np.asarray([
+            [0],
+            [l1 / denom],
+        ])
+        C_lon = np.asarray([[1, 0]])
+        P_lon = np.asarray([
+            natural_frequency_theta * (-damping_ratio_theta + 1j * np.sqrt(1 - damping_ratio_theta ** 2)),
+            natural_frequency_theta * (-damping_ratio_theta - 1j * np.sqrt(1 - damping_ratio_theta ** 2)),
+        ])
+
+        self.check_state_space(A_lon, B_lon)
+        self.k_lon = ctrl.place(A_lon, B_lon, P_lon)
+        self.k_r_lon = -(1 /
+                         (np.dot(np.dot(C_lon, np.linalg.inv(A_lon - np.dot(B_lon, self.k_lon))), B_lon) )).item(0)
+        print("kr_lon: {}".format(self.k_r_lon))
 
         self.sigma = 0.05
 
@@ -68,37 +117,16 @@ class Controller:
         self.anti_windup_psi = 0.08  # Yaw
         self.anti_windup_phi = 0  # Roll
 
-        # Roll Gains
-        self.P_phi_ = natural_frequency_phi ** 2 / b_phi
-        self.I_phi_ = 0.0  # FIXME Tune this
-        self.D_phi_ = 2.0 * damping_ratio_phi * natural_frequency_phi / b_phi
-        self.Int_phi = 0.0
         self.prev_phi = 0.0
         self.prev_phi_dirty_dot = 0.0
-        self.prev_phi_error = 0.0
-        self.prev_phi_error_dirty_dot = 0.0
 
-        # Pitch Gains
         self.theta_r = 0.0
-        self.P_theta_ = natural_frequency_theta ** 2 / b_theta
-        self.I_theta_ = 2.0
-        self.D_theta_ = 2 * damping_ratio_theta * natural_frequency_theta / b_theta
         self.prev_theta = 0.0
         self.prev_theta_dirty_dot = 0.0
-        self.Int_theta = 0.0
-        self.prev_theta_error = 0.0
-        self.prev_theta_error_dirty_dot = 0.0
 
-        # Yaw Gains
         self.psi_r = 0.0
-        self.P_psi_ = (2.2 / rise_time_psi) ** 2 / b_psi + 0.3
-        self.I_psi_ = 0.55  # FIXME Tune this
-        self.D_psi_ = 2 * damping_ratio_psi * 2.2 / (b_psi + rise_time_psi) + 0.45
         self.prev_psi = 0.0
         self.prev_psi_dirty_dot = 0.0
-        self.Int_psi = 0.0
-        self.prev_psi_error = 0.0
-        self.prev_psi_error_dirty_dot = 0.0
 
         self.prev_time = rospy.Time.now()
 
@@ -109,6 +137,13 @@ class Controller:
         while not rospy.is_shutdown():
             # wait for new messages and call the callback when they arrive
             rospy.spin()
+
+    @staticmethod
+    def check_state_space(A, B):
+        cont_mat = ctrl.ctrb(A, B)
+        if np.linalg.matrix_rank(cont_mat) != cont_mat.shape[0]:
+            rospy.logfatal('System is not controllable!')
+            rospy.signal_shutdown('bad system')
 
     def theta_r_callback(self, msg):
         self.theta_r = msg.data
@@ -149,29 +184,21 @@ class Controller:
         phi_dot = self.dirty_derivative(phi, self.prev_phi, self.prev_phi_dirty_dot, dt)
         psi_dot = self.dirty_derivative(psi, self.prev_psi, self.prev_psi_dirty_dot, dt)
 
-        theta_error = self.theta_r - theta
-        theta_error_dot = self.dirty_derivative(theta_error, self.prev_theta_error, self.prev_theta_error_dirty_dot, dt)
-        if np.abs(theta_error_dot) < self.anti_windup_theta:
-            self.Int_theta += (dt / 2) * (theta_error + self.prev_theta_error)
-        force_tilde = self.P_theta_ * theta_error + self.Int_theta * self.I_theta_ - self.D_theta_ * theta_dot
-        force = force_tilde + equilibrium_force
-        self.prev_theta_error = theta_error
+        state_lon = np.asarray([
+            [theta],
+            [theta_dot],
+        ])
 
-        psi_error = self.psi_r - psi
-        psi_error_dot = self.dirty_derivative(psi_error, self.prev_psi_error, self.prev_psi_error_dirty_dot, dt)
-        if np.abs(psi_error_dot) < self.anti_windup_psi:
-            self.Int_psi += (dt / 2) * (psi_error + self.prev_psi_error)
-        phi_r = psi_error * self.P_psi_ + self.Int_psi * self.I_psi_ - self.D_psi_ * psi_dot
-        self.prev_psi_error = psi_error
+        force = equilibrium_force - np.dot(self.k_lon, state_lon).item(0) + self.k_r_lon * self.theta_r
 
-        phi_error = phi_r - phi
-        phi_error_dot = self.dirty_derivative(phi_error, self.prev_phi_error, self.prev_phi_error_dirty_dot, dt)
-        if np.abs(phi_error_dot) < self.anti_windup_phi:
-            self.Int_phi += (dt / 2) * (phi_error + self.prev_phi_error)
-        torque = phi_error * self.P_phi_ + self.Int_phi * self.I_phi_ - self.D_phi_ * phi_dot
-        self.prev_phi_error = phi_error
+        state_lat = np.asarray([
+            [phi],
+            [psi],
+            [phi_dot],
+            [psi_dot],
+        ])
 
-        print('Pitch: {}\nYaw: {}\nRoll: {}'.format(self.Int_theta, self.Int_psi, self.Int_phi))
+        torque = np.dot(-self.k_lat, state_lat).item(0) + self.k_r_lat * self.psi_r
 
         u = np.array([
             [force],
@@ -192,10 +219,6 @@ class Controller:
         self.prev_phi_dirty_dot = phi_dot
         self.prev_psi_dirty_dot = psi_dot
 
-        self.prev_theta_error_dirty_dot = theta_error_dot
-        self.prev_phi_error_dirty_dot = phi_error_dot
-        self.prev_psi_error_dirty_dot = psi_error_dot
-
         ##################################
 
         sat_max = 0.7
@@ -205,14 +228,14 @@ class Controller:
         if l_out < 0:
             l_out = 0
         elif l_out > sat_max:
-            rospy.logerr('Left force saturated!')
+            # rospy.logerr('Left force saturated!')
             l_out = sat_max
 
         r_out = right_force / km
         if r_out < 0:
             r_out = 0
         elif r_out > sat_max:
-            rospy.logerr('Right force saturated!')
+            # rospy.logerr('Right force saturated!')
             r_out = sat_max
 
         # Pack up and send command
