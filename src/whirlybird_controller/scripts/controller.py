@@ -51,6 +51,8 @@ class Controller:
         rise_time_theta = 1.0
         rise_time_phi = 0.35
         bandwidth_separation = 7.0
+        int_pole_lat = 0.1
+        int_pole_lon = 0.1
 
         denom = (m1 * l1 ** 2 + m2 * l2 ** 2 + Jy)
         Fe = (m1 * l1 - m2 * l2) * g / l1
@@ -83,13 +85,18 @@ class Controller:
             natural_frequency_phi * (-damping_ratio_phi + 1j * np.sqrt(1 - damping_ratio_phi ** 2)),
             natural_frequency_phi * (-damping_ratio_phi - 1j * np.sqrt(1 - damping_ratio_phi ** 2)),
             natural_frequency_psi * (-damping_ratio_psi + 1j * np.sqrt(1 - damping_ratio_psi ** 2)),
+            int_pole_lat,
             natural_frequency_psi * (-damping_ratio_psi - 1j * np.sqrt(1 - damping_ratio_psi ** 2)),
         ])
 
-        self.check_state_space(A_lat, B_lat)
-        self.k_lat = ctrl.place(A_lat, B_lat, P_lat)
-        self.k_r_lat = (-1 /
-                        (np.dot(np.dot(C_lat[1], np.linalg.inv(A_lat - np.dot(B_lat, self.k_lat))), B_lat))).item(0)
+        A_I_lat, B_I_lat = self.augment_matrices(A_lat, B_lat, C_lat[1:2, 0:4])
+
+        self.check_state_space(A_I_lat, B_I_lat)
+        K_lat = ctrl.place(A_I_lat, B_I_lat, P_lat)
+        print("latitudinal gains :", K_lat)
+        size_lat = A_I_lat.shape[0]
+        self.k_lat = K_lat[:, 0:size_lat - 1]
+        self.k_int_lat = K_lat.item(size_lat - 1)
 
         A_lon = np.asarray([
             [0, 1],
@@ -103,27 +110,36 @@ class Controller:
         P_lon = np.asarray([
             natural_frequency_theta * (-damping_ratio_theta + 1j * np.sqrt(1 - damping_ratio_theta ** 2)),
             natural_frequency_theta * (-damping_ratio_theta - 1j * np.sqrt(1 - damping_ratio_theta ** 2)),
+            int_pole_lon
         ])
 
-        self.check_state_space(A_lon, B_lon)
-        self.k_lon = ctrl.place(A_lon, B_lon, P_lon)
-        self.k_r_lon = -(1 /
-                         (np.dot(np.dot(C_lon, np.linalg.inv(A_lon - np.dot(B_lon, self.k_lon))), B_lon) )).item(0)
-        print("kr_lon: {}".format(self.k_r_lon))
+        A_I_lon, B_I_lon = self.augment_matrices(A_lon, B_lon, C_lon)
+
+        self.check_state_space(A_I_lon, B_I_lon)
+        K_lon = ctrl.place(A_I_lon, B_I_lon, P_lon)
+        print("longitudinal gains: ", K_lon)
+        size_lon = A_I_lon.shape[0]
+        self.k_lon = K_lon[:, 0:size_lon - 1]
+        self.k_int_lon = K_lon.item(size_lon - 1)
 
         self.sigma = 0.05
 
         self.anti_windup_theta = 0.05
         self.anti_windup_psi = 0.08  # Yaw
-        self.anti_windup_phi = 0  # Roll
 
         self.prev_phi = 0.0
         self.prev_phi_dirty_dot = 0.0
 
+        self.int_theta = 0.0
+        self.prev_error_theta = 0.0
+        self.prev_error_theta_dirty_dot = 0.0
         self.theta_r = 0.0
         self.prev_theta = 0.0
         self.prev_theta_dirty_dot = 0.0
 
+        self.int_psi = 0.0
+        self.prev_error_psi = 0.0
+        self.prev_error_psi_dirty_dot = 0.0
         self.psi_r = 0.0
         self.prev_psi = 0.0
         self.prev_psi_dirty_dot = 0.0
@@ -144,6 +160,15 @@ class Controller:
         if np.linalg.matrix_rank(cont_mat) != cont_mat.shape[0]:
             rospy.logfatal('System is not controllable!')
             rospy.signal_shutdown('bad system')
+
+    @staticmethod
+    def augment_matrices(A, B, C):
+        temp = np.concatenate((A, C))
+        A_I = np.concatenate((temp, np.zeros((temp.shape[0], 1))), 1)
+
+        B_I = np.concatenate((B, np.zeros((1, 1))))
+
+        return A_I, B_I
 
     def theta_r_callback(self, msg):
         self.theta_r = msg.data
@@ -189,7 +214,14 @@ class Controller:
             [theta_dot],
         ])
 
-        force = equilibrium_force - np.dot(self.k_lon, state_lon).item(0) + self.k_r_lon * self.theta_r
+        error_theta = self.theta_r - theta
+        error_theta_dot = self.dirty_derivative(error_theta, self.prev_error_theta, self.prev_error_theta_dirty_dot, dt)
+        if error_theta_dot <= self.anti_windup_theta:
+            self.int_theta += (dt / 2) * (error_theta + self.prev_error_theta)
+        self.prev_error_theta = error_theta
+        self.prev_error_theta_dirty_dot = error_theta_dot
+
+        force = equilibrium_force - np.dot(self.k_lon, state_lon).item(0) - self.k_int_lon * self.int_theta
 
         state_lat = np.asarray([
             [phi],
@@ -198,7 +230,19 @@ class Controller:
             [psi_dot],
         ])
 
-        torque = np.dot(-self.k_lat, state_lat).item(0) + self.k_r_lat * self.psi_r
+        error_psi = self.psi_r - psi
+        error_psi_dot = self.dirty_derivative(error_psi, self.prev_error_psi, self.prev_error_psi_dirty_dot, dt)
+        if error_psi_dot <= self.anti_windup_psi:
+            self.int_psi += (dt / 2) * (error_psi + self.prev_error_psi)
+            print("Integrating psi")
+        else:
+            print("Skipping psi integrator")
+        self.prev_error_psi = error_psi
+        self.prev_error_psi_dirty_dot = error_psi_dot
+
+        torque = np.dot(-self.k_lat, state_lat).item(0) - self.k_int_lat * self.int_psi
+
+        # print('Lat: {}\nlon: {}'.format(self.int_psi, self.int_theta))
 
         u = np.array([
             [force],
@@ -245,14 +289,14 @@ class Controller:
         self.command_pub_.publish(command)
 
     def dirty_derivative(self, this_val, last_val, last_dirty_dot, dt):
-        return ((2 * self.sigma - dt) / (2 * self.sigma + dt)) * last_dirty_dot +\
+        return ((2 * self.sigma - dt) / (2 * self.sigma + dt)) * last_dirty_dot + \
                (2 / (2 * self.sigma + dt)) * (this_val - last_val)
 
 
 if __name__ == '__main__':
     rospy.init_node('controller', anonymous=True)
-    try:
-        controller = Controller()
-    except:
-        raise rospy.ROSInterruptException
-    pass
+    # try:
+    controller = Controller()
+    # except BaseException:
+    #     raise rospy.ROSInterruptException()
+    # pass

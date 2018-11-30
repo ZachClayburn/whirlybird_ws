@@ -36,7 +36,7 @@ class WhirlybirdSim():
         dynamics_rate = rospy.get_param('~rate', 150)
         rospy.Timer(rospy.Duration(1.0/dynamics_rate), self.dynamics_timer_callback)
 
-        l= .9
+        l = .9
         h = 1.1
 
         self.g  = self.param['g']
